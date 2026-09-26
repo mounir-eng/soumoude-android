@@ -80,7 +80,7 @@ public class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                trustedShell = SHELL_URL.equals(url);
+                trustedShell = url != null && url.startsWith(SHELL_URL);
                 super.onPageStarted(view,url,favicon);
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
@@ -144,11 +144,18 @@ public class MainActivity extends Activity {
     private void deleteTree(File file){ if(file==null||!file.exists()) return; File[] children=file.listFiles(); if(children!=null) for(File c:children) deleteTree(c); file.delete(); }
 
     public class OfflineBridge {
-        @JavascriptInterface public boolean isUnitInstalled(String id,String expectedSha){
-            if(!trusted()||!validId(id)) return false; File dir=new File(unitsRoot(),id); File marker=new File(dir,".installed"); File entry=new File(dir,"index.html");
-            if(!marker.isFile()||!entry.isFile()) return false;
-            try { byte[] data=new byte[(int)marker.length()]; try(FileInputStream in=new FileInputStream(marker)){ if(in.read(data)!=data.length) return false; } return new String(data,"UTF-8").trim().equalsIgnoreCase(expectedSha); } catch(Exception e){ return false; }
+        @JavascriptInterface public String getUnitState(String id,String expectedSha){
+            if(!validId(id)) return "missing";
+            File dir=new File(unitsRoot(),id), marker=new File(dir,".installed"), entry=new File(dir,"index.html");
+            if(!marker.isFile()||!entry.isFile()) return "missing";
+            try {
+                StringBuilder value=new StringBuilder();
+                try(InputStream in=new FileInputStream(marker)){ byte[] data=new byte[128]; int n; while((n=in.read(data))!=-1) value.append(new String(data,0,n,"UTF-8")); }
+                return value.toString().trim().equalsIgnoreCase(expectedSha)?"installed":"update";
+            } catch(Exception e){ return "update"; }
         }
+
+        @JavascriptInterface public boolean isUnitInstalled(String id,String expectedSha){ return "installed".equals(getUnitState(id,expectedSha)); }
 
         @JavascriptInterface public void downloadUnit(String id,String source,String expectedSha,String entry){
             if(!trusted()||!validId(id)||!validEntry(entry)){ callback(id,"error",0,"بيانات الوحدة غير صالحة"); return; }
