@@ -1,11 +1,11 @@
 {
-  "version": 2,
+  "version": 3,
   "base_url": "https://raw.githubusercontent.com/mounir-eng/Nour-al-Sumude/main/unit_packs/",
   "units": [
     {
       "id": "physics12_unit1",
       "title": "الزخم الخطي والدفع",
-      "file": "physics12_unit1_complete_offline.zip",
+      "file": "physics12_unit1_offline_v3.zip",
       "sha256": "2c5c4e5186bb1646abd37c429983e3a14ccf51568ff2f7e89532b8c3cd2ee1f1",
       "entry": "index.html",
       "version": 3
@@ -13,7 +13,7 @@
     {
       "id": "chemistry12_unit1",
       "title": "البناء الإلكتروني للذرة",
-      "file": "chemistry12_unit1_complete_offline.zip",
+      "file": "chemistry12_unit1_offline_v3.zip",
       "sha256": "a99d45617aecfae6899d85a9f530561da4f208593cd6d692f2f751a87ee47f50",
       "entry": "index.html",
       "version": 3
