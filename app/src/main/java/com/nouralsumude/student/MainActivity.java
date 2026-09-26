@@ -121,6 +121,16 @@ public class MainActivity extends Activity {
         runOnUiThread(()->webView.evaluateJavascript(js,null));
     }
 
+    private boolean validAssetPath(String path){ return path!=null && path.matches("unit_packs/[a-zA-Z0-9_.-]{1,100}\\.zip") && !path.contains(".."); }
+
+    private void copyWithProgress(InputStream raw, File target, int total, String id) throws Exception {
+        int read=0,last=-1;
+        try(InputStream in=new BufferedInputStream(raw); BufferedOutputStream out=new BufferedOutputStream(new FileOutputStream(target))){
+            byte[] data=new byte[16384]; int n;
+            while((n=in.read(data))!=-1){ out.write(data,0,n); read+=n; int pct=total>0?Math.min(95,read*95/total):35; if(pct>=last+3){last=pct;callback(id,"progress",pct,"");} }
+        }
+    }
+
     private String sha256(File file) throws Exception {
         MessageDigest md=MessageDigest.getInstance("SHA-256");
         try(InputStream in=new BufferedInputStream(new FileInputStream(file))){ byte[] b=new byte[16384]; int n; while((n=in.read(b))!=-1) md.update(b,0,n); }
@@ -157,24 +167,33 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface public boolean isUnitInstalled(String id,String expectedSha){ return "installed".equals(getUnitState(id,expectedSha)); }
 
-        @JavascriptInterface public void downloadUnit(String id,String source,String expectedSha,String entry){
-            if(!trusted()||!validId(id)||!validEntry(entry)){ callback(id,"error",0,"بيانات الوحدة غير صالحة"); return; }
+        @JavascriptInterface public void downloadUnit(String id,String source,String expectedSha,String entry,String assetPath){
+            if(!trusted()||!validId(id)||!validEntry(entry)||!validAssetPath(assetPath)){ callback(id,"error",0,"بيانات الوحدة غير صالحة"); return; }
             executor.execute(()->{
-                File temp=null,staging=null;
+                File temp=new File(getCacheDir(),id+".zip.part"),staging=null;
                 try {
-                    URL url=new URL(source); if(!"https".equals(url.getProtocol())||!"raw.githubusercontent.com".equals(url.getHost())||!url.getPath().startsWith("/mounir-eng/Nour-al-Sumude/")) throw new SecurityException("مصدر التنزيل غير معتمد");
-                    HttpURLConnection c=(HttpURLConnection)url.openConnection(); c.setConnectTimeout(20000); c.setReadTimeout(30000); c.setInstanceFollowRedirects(true); c.setRequestProperty("User-Agent","StudentSamedOfflineAndroid/1.0"); c.connect();
-                    if(c.getResponseCode()<200||c.getResponseCode()>=300) throw new Exception("تعذر الوصول إلى ملف الوحدة");
-                    int total=c.getContentLength(); temp=new File(getCacheDir(),id+".zip.part"); int read=0,last=-1;
-                    try(InputStream in=new BufferedInputStream(c.getInputStream()); BufferedOutputStream out=new BufferedOutputStream(new FileOutputStream(temp))){ byte[] b=new byte[16384]; int n; while((n=in.read(b))!=-1){ out.write(b,0,n); read+=n; int pct=total>0?Math.min(95,read*95/total):25; if(pct>=last+3){ last=pct; callback(id,"progress",pct,""); } } }
-                    c.disconnect();
-                    if(!sha256(temp).equalsIgnoreCase(expectedSha)) throw new SecurityException("فشل التحقق من سلامة الوحدة؛ أعد التنزيل");
+                    boolean validRemote=false;
+                    HttpURLConnection connection=null;
+                    try {
+                        URL url=new URL(source);
+                        if(!"https".equals(url.getProtocol())||!"raw.githubusercontent.com".equals(url.getHost())||!url.getPath().startsWith("/mounir-eng/Nour-al-Sumude/")) throw new SecurityException("مصدر التنزيل غير معتمد");
+                        connection=(HttpURLConnection)url.openConnection(); connection.setConnectTimeout(12000); connection.setReadTimeout(20000); connection.setInstanceFollowRedirects(true); connection.setRequestProperty("User-Agent","StudentSamedOfflineAndroid/1.4"); connection.connect();
+                        if(connection.getResponseCode()>=200&&connection.getResponseCode()<300){ copyWithProgress(connection.getInputStream(),temp,connection.getContentLength(),id); validRemote=sha256(temp).equalsIgnoreCase(expectedSha); }
+                    } catch(Exception ignored){ validRemote=false; }
+                    finally { if(connection!=null) connection.disconnect(); }
+
+                    if(!validRemote){
+                        temp.delete(); callback(id,"bundled",1,"");
+                        InputStream embedded=getAssets().open(assetPath); copyWithProgress(embedded,temp,embedded.available(),id);
+                        if(!sha256(temp).equalsIgnoreCase(expectedSha)) throw new SecurityException("تعذر التحقق من النسخة المضمّنة للوحدة");
+                    }
+
                     callback(id,"extracting",100,""); staging=new File(unitsRoot(),id+".new"); deleteTree(staging); if(!staging.mkdirs()) throw new Exception("تعذر تجهيز مساحة الوحدة"); unzipSafe(temp,staging);
                     File entryFile=new File(staging,entry); if(!entryFile.isFile()) throw new Exception("ملف تشغيل الوحدة غير موجود");
                     try(FileOutputStream out=new FileOutputStream(new File(staging,".installed"))){ out.write(expectedSha.getBytes("UTF-8")); }
                     File destination=new File(unitsRoot(),id); deleteTree(destination); if(!staging.renameTo(destination)) throw new Exception("تعذر تثبيت الوحدة"); staging=null; callback(id,"done",100,"");
-                } catch(Exception e){ callback(id,"error",0,e.getMessage()==null?"تعذر تنزيل الوحدة":e.getMessage()); }
-                finally { if(temp!=null) temp.delete(); if(staging!=null) deleteTree(staging); }
+                } catch(Exception e){ callback(id,"error",0,e.getMessage()==null?"تعذر تثبيت الوحدة":e.getMessage()); }
+                finally { temp.delete(); if(staging!=null) deleteTree(staging); }
             });
         }
 
